@@ -75,7 +75,7 @@ struct participant_and_observer {
 struct sd_and_time * sd_and_timeArray[510]; /* array of pointers to sd and time structs */
 struct participant_and_observer * participant_and_observerArray[255]; /* array of pointers to particpant and observers structs */
 
-Trie *trie;
+Trie *trie; /* struct for storing usernames */ 
 
 /**********************************************************************************************************************************************/
 /*Functions Functions Functions Functions Functions Functions Functions Functions Functions Functions Functions Functions Functions Functions*/
@@ -422,6 +422,7 @@ bool is_username_in_particpants_and_observersArray(char * username) {
 	return false;
 }
 
+/* function sends warning to a user if the username they intend on sending a private message to doesn't exist */
 void send_warning(int participants_socket, char * recipients_username) {
 	char beginning[] = "Warning: user ";
     char ending[] = " doesn't exist...";
@@ -544,6 +545,7 @@ char * receive_username_from_client( uint8_t username_length ) {
 	return username;
 }
 
+/* function removes any pending participants connections taking longer than 60 seconds to negotiate a username */
 void purge_losers(struct timeval recivedtime) {
 
 	for (int i=0; i<510; i++) {
@@ -616,7 +618,7 @@ void negotiate_observer_username (int observers_socket) {
 	                }
 	            }
 	        }
-		}
+	  }
     }
 }
 
@@ -848,7 +850,7 @@ void process_message(int participants_socket) { /* its a public or private messa
 	}
 }
 
-/* signal came from the participant connection socket or observer connection socket. If so, a new participant/observer is trying to connect */
+/* function detects a signal came from the participant connection socket or observer connection socket trying to connect */
 void signal_received_check_sockets(int socket, int * num_connected, int socketArray[], int id) {
 
 	/* check that there is room for this new participant or observer connection */
@@ -912,7 +914,7 @@ void signal_received_check_sockets(int socket, int * num_connected, int socketAr
 	}
 }
 
-/*Functions Functions Functions Functions Functions Functions Functions Functions Functions Functions Functions Functions Functions Functions*/
+/* End Functions End Functions End Functions End Functions End Functions End Functions End Functions End Functions End Functions End Functions */
 /**********************************************************************************************************************************************/
 int main(int argc, char **argv) {
 	struct protoent *ptrp; /* pointer to a protocol table entry */
@@ -933,7 +935,7 @@ int main(int argc, char **argv) {
 		exit(EXIT_FAILURE);
 	}
 
-	memset((char *)&sad_p,0,sizeof(sad_p)); /* clear sockaddr structure */
+	memset((char *)&sad_p,0,sizeof(sad_p)); /* clear out sockaddr structure of connected participants */
 	sad_p.sin_family = AF_INET; /* set family to Internet */
 	sad_p.sin_addr.s_addr = INADDR_ANY; /* set the local IP address */
 
@@ -945,7 +947,7 @@ int main(int argc, char **argv) {
 		exit(EXIT_FAILURE);
 	}
 
-    memset((char *)&sad_o,0,sizeof(sad_o)); /* clear sockaddr structure */
+    memset((char *)&sad_o,0,sizeof(sad_o)); /* clear out sockaddr structure of connected observers */
 	sad_o.sin_family = AF_INET; /* set family to Internet */
 	sad_o.sin_addr.s_addr = INADDR_ANY; /* set the local IP address */
 
@@ -1003,13 +1005,13 @@ int main(int argc, char **argv) {
         exit(EXIT_FAILURE);
     }
 
-	/* Specify size of 6 pending connections to the participants socket */
+	/* Specify size of 6 pending connections to the participants socket queue */
 	if (listen(participants_socket, QLEN) < 0) {
 		fprintf(stderr,"Error: Listen failed\n");
 		exit(EXIT_FAILURE);
 	}
 
-    /* Specify size of 6 pending connections to the observers queue */
+    /* Specify size of 6 pending connections to the observers socket queue */
     if (listen(observers_socket, QLEN) < 0) {
         fprintf(stderr,"Error: Listen failed\n");
         exit(EXIT_FAILURE);
@@ -1019,7 +1021,7 @@ int main(int argc, char **argv) {
     memset(sdp_Array, 0, 255);
     memset(sdo_Array, 0, 255);
 
-	trie = trie_new(); /* create a trie */
+	trie = trie_new(); /* create a trie for usernames */
 
 	FD_ZERO(&readfds);	/* clear the socket set for participants and observers */
 
@@ -1036,6 +1038,7 @@ int main(int argc, char **argv) {
 
 		FD_SET(observers_socket, &readfds); /* add the master socket for listening to new observer connections */
 
+		/* periodically purge participants taking too long */
 		if (num_participants > 127  || num_observers > 127 ) {
 			gettimeofday(&receive_time, NULL);
 			purge_losers(receive_time);
@@ -1057,18 +1060,20 @@ int main(int argc, char **argv) {
 
 		/* check if a signal came from the participant/observer socket. If so, a participant/observer is trying to connect */
 		if (FD_ISSET(participants_socket, &readfds)) {
-			signal_received_check_sockets(participants_socket, &num_participants, sdp_Array, 1); // this works fine
+			signal_received_check_sockets(participants_socket, &num_participants, sdp_Array, 1);
 		}
 		else if (FD_ISSET(observers_socket, &readfds)) {
 			signal_received_check_sockets(observers_socket, &num_observers, sdo_Array, -1);
 		}
 		else { /* its a message or disconnection from a connected host */
 			for (int i=0; i<255; i++) {
+				/* find the observer in the array with FD_ISSET */
 				if (FD_ISSET(sdo_Array[i], &readfds)) {
 					negotiate_observer_username(sdo_Array[i]);
 					break;
 				}
 				else {
+					/* find the participant in the array with FD_ISSET */
 					if (FD_ISSET(sdp_Array[i], &readfds)) {
 
 						char * username_ptr = get_username_out_of_struct(sdp_Array[i]);
@@ -1084,6 +1089,6 @@ int main(int argc, char **argv) {
 				}
 			}
 		}
-	} // while 1
-	trie_free(trie);
-} // main
+	} // End while 1
+	trie_free(trie); // Clear out trie tree
+} // End of main
